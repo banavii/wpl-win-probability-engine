@@ -1,0 +1,29 @@
+{
+    "model_type": "Logistic Regression",
+    "dataset": "Cricsheet WPL",
+    "total_matches": 88,
+    "modeling_matches": 87,
+    "training_matches": 69,
+    "testing_matches": 18,
+    "accuracy": 0.909823677581864,
+    "roc_auc": 0.9666344294003868,
+    "log_loss": 0.25197724894438067,
+    "brier_score": 0.07195368772073055,
+    "numeric_features": [
+        "runs_scored",
+        "runs_required",
+        "balls_remaining",
+        "wickets_in_hand",
+        "current_run_rate",
+        "required_run_rate",
+        "runs_last_12_balls",
+        "runs_last_6_balls"
+    ],
+    "categorical_features": [
+        "phase"
+    ],
+    "target": "win_target",
+    "state_type": "post_delivery",
+    "probability_calibration": "Original Logistic Regression",
+    "random_state": 42
+}

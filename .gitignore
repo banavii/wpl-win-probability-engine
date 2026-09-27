@@ -1,0 +1,40 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Environment variables / secrets
+.env
+.env.*
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+
+# Python cache
+.pytest_cache/
+
+# Large/raw datasets
+data/raw/
+
+# Generated processed data
+data/processed/
+
+# Trained model files
+models/*.joblib
+models/*.pkl
+
+# OS/editor files
+*.swp
+*.swo
