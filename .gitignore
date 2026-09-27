@@ -31,9 +31,6 @@ data/raw/
 # Generated processed data
 data/processed/
 
-# Trained model files
-models/*.joblib
-models/*.pkl
 
 # OS/editor files
 *.swp
