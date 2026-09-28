@@ -3,183 +3,173 @@ import pandas as pd
 from src.predictor import WPLPredictor
 
 
-class MatchReplay:
+DATA_PATH = "data/processed/deliveries.parquet"
 
-    def __init__(
-        self,
-        data_path="data/processed/deliveries.parquet",
-        model_path="models/wpl_win_probability_model.joblib"
-    ):
-        # Load processed delivery data
-        self.df = pd.read_parquet(data_path)
 
-        # Load trained ML model
-        self.predictor = WPLPredictor(model_path)
+class WPLReplay:
 
-    # --------------------------------------------------
-    # GET MATCH DATA
-    # --------------------------------------------------
+    def __init__(self):
+        self.df = pd.read_parquet(DATA_PATH)
+        self.predictor = WPLPredictor()
 
     def get_match(self, match_id):
-        """
-        Return all deliveries belonging to one match.
-        """
-
         match_df = self.df[
-            self.df["match_id"].astype(str) == str(match_id)
+            self.df["match_id"] == match_id
         ].copy()
+
+        return match_df
+
+    def replay_second_innings(self, match_id):
+
+        match_df = self.get_match(match_id)
 
         if match_df.empty:
             raise ValueError(
                 f"Match {match_id} not found."
             )
 
-        return match_df.sort_values(
-            ["innings", "over", "ball"]
-        ).reset_index(drop=True)
-
-    # --------------------------------------------------
-    # REPLAY SECOND INNINGS
-    # --------------------------------------------------
-
-    def replay_second_innings(self, match_id):
-        """
-        Replay the second innings delivery by delivery.
-
-        After every legal delivery, calculate the batting
-        team's predicted win probability.
-        """
-
-        # Get match
-        match_df = self.get_match(match_id)
-
-        # Get second innings
-        innings_df = match_df[
-            match_df["innings"] == 2
-        ].copy()
-
-        if innings_df.empty:
-            raise ValueError(
-                f"Match {match_id} does not contain a second innings."
-            )
-
-        # --------------------------------------------------
-        # CALCULATE TARGET
-        # --------------------------------------------------
+        # -------------------------------------------------
+        # FIRST INNINGS
+        # -------------------------------------------------
 
         first_innings = match_df[
             match_df["innings"] == 1
         ]
 
-        first_innings_score = int(
+        target = (
             first_innings["total_runs"].sum()
+            + 1
         )
 
-        target = first_innings_score + 1
+        # -------------------------------------------------
+        # SECOND INNINGS
+        # -------------------------------------------------
 
-        # --------------------------------------------------
-        # INITIAL MATCH STATE
-        # --------------------------------------------------
+        second_innings = match_df[
+            match_df["innings"] == 2
+        ].copy()
+
+        if second_innings.empty:
+            raise ValueError(
+                "Second innings not found."
+            )
+
+        # -------------------------------------------------
+        # REPLAY VARIABLES
+        # -------------------------------------------------
 
         runs_scored = 0
         wickets_lost = 0
         legal_balls = 0
 
-        # Store runs from legal deliveries
-        legal_delivery_history = []
+        recent_legal_runs = []
 
-        # Store probability after every legal delivery
-        probability_history = []
+        replay_rows = []
 
-        # --------------------------------------------------
-        # REPLAY EACH DELIVERY
-        # --------------------------------------------------
+        # -------------------------------------------------
+        # DELIVERY LOOP
+        # -------------------------------------------------
 
-        for _, delivery in innings_df.iterrows():
+        for _, delivery in second_innings.iterrows():
 
-            # ----------------------------------------------
-            # ADD RUNS
-            # ----------------------------------------------
+            # Determine whether delivery is legal
+            is_legal = (
+                delivery["extra_type"]
+                not in ["wides", "noballs"]
+            )
 
+            # Add runs
             runs_scored += int(
                 delivery["total_runs"]
             )
 
-            # ----------------------------------------------
-            # CHECK LEGAL DELIVERY
-            # ----------------------------------------------
-
-            # Wides and no-balls do not count as legal balls.
-            is_legal = delivery["extra_type"] not in [
-                "wides",
-                "noballs"
-            ]
-
-            # ----------------------------------------------
-            # CHECK WICKET
-            # ----------------------------------------------
-
-            wicket = pd.notna(
-                delivery["player_out"]
-            )
-
-            if wicket:
+            # Add wicket
+            if pd.notna(delivery["player_out"]):
                 wickets_lost += 1
 
-            # ----------------------------------------------
-            # PROCESS LEGAL DELIVERY
-            # ----------------------------------------------
+            # -------------------------------------------------
+            # ONLY UPDATE BALL-BASED FEATURES
+            # FOR LEGAL DELIVERIES
+            # -------------------------------------------------
 
             if is_legal:
 
                 legal_balls += 1
 
-                # Store runs from this legal delivery
-                legal_delivery_history.append(
+                recent_legal_runs.append(
                     int(delivery["total_runs"])
                 )
 
-                # ------------------------------------------
-                # RECENT MOMENTUM
-                # ------------------------------------------
+                # Keep only last 12 legal balls
+                if len(recent_legal_runs) > 12:
+                    recent_legal_runs.pop(0)
 
-                runs_last_12_balls = sum(
-                    legal_delivery_history[-12:]
-                )
+            # -------------------------------------------------
+            # STOP CONDITIONS
+            # -------------------------------------------------
 
-                runs_last_6_balls = sum(
-                    legal_delivery_history[-6:]
-                )
+            runs_required = target - runs_scored
 
-                # ------------------------------------------
-                # CURRENT OVER
-                # ------------------------------------------
+            balls_remaining = max(
+                0,
+                120 - legal_balls
+            )
 
-                current_over = int(
-                    delivery["over"]
-                )
+            wickets_in_hand = max(
+                0,
+                10 - wickets_lost
+            )
 
-                # ------------------------------------------
-                # RUNS REQUIRED
-                # ------------------------------------------
+            # If match is already won
+            if runs_scored >= target:
+                runs_required = 0
 
-                runs_required = target - runs_scored
+            # -------------------------------------------------
+            # CURRENT OVER
+            # -------------------------------------------------
 
-                # ------------------------------------------
-                # CHECK WHETHER MODEL CAN PREDICT
-                # ------------------------------------------
+            current_over = int(
+                delivery["over"]
+            )
 
-                can_predict = (
-                    runs_required > 0
-                    and legal_balls < 120
-                    and wickets_lost < 10
-                )
+            # -------------------------------------------------
+            # RECENT MOMENTUM
+            # -------------------------------------------------
 
-                if can_predict:
+            runs_last_12_balls = sum(
+                recent_legal_runs[-12:]
+            )
 
-                    # --------------------------------------
-                    # MODEL PREDICTION
-                    # --------------------------------------
+            runs_last_6_balls = sum(
+                recent_legal_runs[-6:]
+            )
+
+            # -------------------------------------------------
+            # ONLY PREDICT AFTER LEGAL DELIVERY
+            # -------------------------------------------------
+
+            if is_legal:
+
+                # Match won
+                if runs_scored >= target:
+
+                    win_probability = 1.0
+
+                # All wickets lost
+                elif wickets_lost >= 10:
+
+                    win_probability = 0.0
+
+                # Innings finished
+                elif legal_balls >= 120:
+
+                    win_probability = (
+                        1.0
+                        if runs_scored >= target
+                        else 0.0
+                    )
+
+                else:
 
                     result = self.predictor.predict(
                         runs_scored=runs_scored,
@@ -191,77 +181,68 @@ class MatchReplay:
                         current_over=current_over
                     )
 
-                    probability = result[
+                    win_probability = result[
                         "batting_team_probability"
                     ]
 
-                    # --------------------------------------
-                    # SAVE MATCH STATE
-                    # --------------------------------------
+                # -------------------------------------------------
+                # SAVE STATE
+                # -------------------------------------------------
 
-                    probability_history.append({
-
+                replay_rows.append(
+                    {
                         "match_id": match_id,
-
-                        "innings": 2,
-
-                        "legal_balls": legal_balls,
-
                         "over": current_over,
-
                         "ball": delivery["ball"],
-
+                        "legal_balls": legal_balls,
                         "runs_scored": runs_scored,
-
-                        "wickets_lost": wickets_lost,
-
-                        "runs_required": runs_required,
-
-                        "balls_remaining": max(
+                        "runs_required": max(
                             0,
-                            120 - legal_balls
+                            runs_required
                         ),
+                        "balls_remaining": balls_remaining,
+                        "wickets_lost": wickets_lost,
+                        "wickets_in_hand": wickets_in_hand,
+                        "runs_last_12_balls": runs_last_12_balls,
+                        "runs_last_6_balls": runs_last_6_balls,
+                        "win_probability": win_probability,
+                        "batter": delivery["batter"],
+                        "bowler": delivery["bowler"],
+                        "total_runs": delivery["total_runs"],
+                        "wicket": pd.notna(
+                            delivery["player_out"]
+                        )
+                    }
+                )
 
-                        "current_run_rate": result[
-                            "current_run_rate"
-                        ],
+            # -------------------------------------------------
+            # STOP REPLAY AFTER MATCH ENDS
+            # -------------------------------------------------
 
-                        "required_run_rate": result[
-                            "required_run_rate"
-                        ],
+            if runs_scored >= target:
+                break
 
-                        "runs_last_12_balls":
-                            runs_last_12_balls,
+            if wickets_lost >= 10:
+                break
 
-                        "runs_last_6_balls":
-                            runs_last_6_balls,
+            if legal_balls >= 120:
+                break
 
-                        "phase": result["phase"],
+        # -----------------------------------------------------
+        # RETURN DATAFRAME
+        # -----------------------------------------------------
 
-                        "win_probability": probability
+        return pd.DataFrame(replay_rows)
 
-                    })
 
-                # ------------------------------------------
-                # STOP CONDITIONS
-                # ------------------------------------------
+# =========================================================
+# DASHBOARD-FRIENDLY FUNCTION
+# =========================================================
 
-                # Chasing team has won
-                if runs_scored >= target:
-                    break
+def replay_second_innings(match_id):
 
-                # Full 20 overs completed
-                if legal_balls >= 120:
-                    break
+    replay = WPLReplay()
 
-                # All 10 wickets lost
-                if wickets_lost >= 10:
-                    break
-
-        # --------------------------------------------------
-        # RETURN RESULTS
-        # --------------------------------------------------
-
-        return pd.DataFrame(
-            probability_history
-        )
+    return replay.replay_second_innings(
+        match_id
+    )
