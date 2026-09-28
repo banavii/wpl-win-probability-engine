@@ -4,9 +4,10 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-# ---------------------------------------------------------
+
+# =========================================================
 # PATH SETUP
-# ---------------------------------------------------------
+# =========================================================
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 sys.path.append(str(ROOT_DIR))
@@ -15,9 +16,9 @@ from src.predictor import WPLPredictor
 from src.replay import replay_second_innings
 
 
-# ---------------------------------------------------------
+# =========================================================
 # PAGE CONFIG
-# ---------------------------------------------------------
+# =========================================================
 
 st.set_page_config(
     page_title="WPL Win Probability Engine",
@@ -26,18 +27,29 @@ st.set_page_config(
 )
 
 
-# ---------------------------------------------------------
+# =========================================================
 # LOAD MODEL
-# ---------------------------------------------------------
+# =========================================================
 
 @st.cache_resource
 def load_predictor():
     return WPLPredictor()
 
 
+# =========================================================
+# LOAD DATA
+# =========================================================
+
 @st.cache_data
 def load_data():
-    data_path = ROOT_DIR / "data" / "processed" / "deliveries.parquet"
+
+    data_path = (
+        ROOT_DIR
+        / "data"
+        / "processed"
+        / "deliveries.parquet"
+    )
+
     return pd.read_parquet(data_path)
 
 
@@ -45,27 +57,27 @@ predictor = load_predictor()
 df = load_data()
 
 
-# ---------------------------------------------------------
+# =========================================================
 # HEADER
-# ---------------------------------------------------------
+# =========================================================
 
 st.title("🏏 WPL Cricket Win Probability Engine")
 
 st.markdown(
     """
-    **Cricket Win Probability & Match Analytics Engine**
+**Cricket Win Probability & Match Analytics Engine**
 
-    Predict the chasing team's win probability from the current
-    match state and replay historical WPL matches delivery by delivery.
-    """
+Predict the chasing team's win probability from the current
+match state and replay historical WPL matches delivery by delivery.
+"""
 )
 
 st.divider()
 
 
-# ---------------------------------------------------------
+# =========================================================
 # TABS
-# ---------------------------------------------------------
+# =========================================================
 
 historical_tab, live_tab = st.tabs(
     [
@@ -85,9 +97,9 @@ with historical_tab:
 
     st.markdown(
         """
-        Select a completed WPL match to replay the second innings.
-        The model generates a win probability after every legal delivery.
-        """
+Select a completed WPL match to replay the second innings.
+The model generates a win probability after every legal delivery.
+"""
     )
 
     # -----------------------------------------------------
@@ -107,7 +119,6 @@ with historical_tab:
         .drop_duplicates("match_id")
     )
 
-    # Only matches with a winner
     match_info = match_info[
         match_info["winner"].notna()
     ].copy()
@@ -134,7 +145,9 @@ with historical_tab:
         options=list(match_options.keys())
     )
 
-    selected_match_id = match_options[selected_match_label]
+    selected_match_id = match_options[
+        selected_match_label
+    ]
 
     # -----------------------------------------------------
     # MATCH INFORMATION
@@ -147,18 +160,21 @@ with historical_tab:
     col1, col2, col3 = st.columns(3)
 
     with col1:
+
         st.metric(
             "Team 1",
             selected_match["team1"]
         )
 
     with col2:
+
         st.metric(
             "Team 2",
             selected_match["team2"]
         )
 
     with col3:
+
         st.metric(
             "Winner",
             selected_match["winner"]
@@ -173,7 +189,7 @@ with historical_tab:
     replay_button = st.button(
         "▶️ Replay Second Innings",
         type="primary",
-        use_container_width=True
+        width="stretch"
     )
 
     if replay_button:
@@ -187,7 +203,10 @@ with historical_tab:
                 )
 
                 st.session_state["replay_df"] = replay_df
-                st.session_state["replay_match_id"] = selected_match_id
+
+                st.session_state[
+                    "replay_match_id"
+                ] = selected_match_id
 
             except Exception as e:
 
@@ -220,9 +239,9 @@ with historical_tab:
                 f"{len(replay_df)} delivery states"
             )
 
-            # -------------------------------------------------
+            # =================================================
             # WIN PROBABILITY CHART
-            # -------------------------------------------------
+            # =================================================
 
             st.subheader(
                 "📊 Win Probability Throughout the Chase"
@@ -235,141 +254,641 @@ with historical_tab:
                 ]
             ].copy()
 
-            chart_df["win_probability"] *= 100
+            chart_df["win_probability"] = (
+                chart_df["win_probability"] * 100
+            )
 
             chart_df = chart_df.rename(
                 columns={
                     "legal_balls": "Legal Balls",
-                    "win_probability": "Batting Team Win Probability (%)"
+                    "win_probability":
+                        "Batting Team Win Probability (%)"
                 }
             )
 
             st.line_chart(
                 chart_df.set_index("Legal Balls"),
-                use_container_width=True
+                width="stretch"
+            )
+
+            # =================================================
+            # INTERACTIVE DELIVERY ANALYSIS
+            # =================================================
+
+            st.divider()
+
+            st.subheader(
+                "🔎 Analyze a Specific Delivery"
+            )
+
+            st.markdown(
+                """
+Select a point in the chase to inspect the exact match
+state and understand what influenced the model's prediction.
+"""
             )
 
             # -------------------------------------------------
-            # LATEST STATE
+            # DELIVERY SELECTOR
             # -------------------------------------------------
 
-            latest = replay_df.iloc[-1]
+            delivery_numbers = list(
+                range(
+                    1,
+                    len(replay_df) + 1
+                )
+            )
 
-            st.subheader("🎯 Latest Match State")
+            selected_delivery_number = st.slider(
+                "Select Delivery State",
+                min_value=1,
+                max_value=len(replay_df),
+                value=len(replay_df),
+                step=1
+            )
+
+            selected_index = (
+                selected_delivery_number - 1
+            )
+
+            selected_state = replay_df.iloc[
+                selected_index
+            ]
+
+            # -------------------------------------------------
+            # PREVIOUS STATE
+            # -------------------------------------------------
+
+            if selected_index > 0:
+
+                previous_state = replay_df.iloc[
+                    selected_index - 1
+                ]
+
+                previous_probability = (
+                    previous_state[
+                        "win_probability"
+                    ] * 100
+                )
+
+            else:
+
+                previous_state = None
+                previous_probability = None
+
+            current_probability = (
+                selected_state[
+                    "win_probability"
+                ] * 100
+            )
+
+            # -------------------------------------------------
+            # DELIVERY INFORMATION
+            # -------------------------------------------------
+
+            st.markdown(
+                f"### Delivery {selected_delivery_number}"
+            )
 
             col1, col2, col3, col4 = st.columns(4)
 
             with col1:
+
                 st.metric(
-                    "Runs",
-                    int(latest["runs_scored"])
+                    "Over",
+                    int(
+                        selected_state["over"]
+                    )
                 )
 
             with col2:
+
                 st.metric(
-                    "Runs Required",
-                    max(0, int(latest["runs_required"]))
+                    "Ball",
+                    str(
+                        selected_state["ball"]
+                    )
                 )
 
             with col3:
+
                 st.metric(
-                    "Wickets in Hand",
-                    int(latest["wickets_in_hand"])
+                    "Batter",
+                    str(
+                        selected_state["batter"]
+                    )
                 )
 
             with col4:
+
                 st.metric(
-                    "Balls Remaining",
-                    int(latest["balls_remaining"])
+                    "Bowler",
+                    str(
+                        selected_state["bowler"]
+                    )
                 )
 
             # -------------------------------------------------
-            # CURRENT PROBABILITY
+            # DELIVERY RESULT
             # -------------------------------------------------
-
-            probability = latest["win_probability"] * 100
-
-            st.subheader("🏆 Current Win Probability")
 
             col1, col2 = st.columns(2)
 
             with col1:
 
                 st.metric(
-                    "Chasing Team",
-                    f"{probability:.2f}%"
-                )
-
-                st.progress(
-                    min(max(probability / 100, 0), 1)
+                    "Runs From Delivery",
+                    int(
+                        selected_state["total_runs"]
+                    )
                 )
 
             with col2:
 
-                opposition_probability = 100 - probability
+                if selected_state["wicket"]:
 
-                st.metric(
-                    "Opposition",
-                    f"{opposition_probability:.2f}%"
-                )
-
-                st.progress(
-                    min(
-                        max(
-                            opposition_probability / 100,
-                            0
-                        ),
-                        1
+                    st.error(
+                        "❌ WICKET"
                     )
-                )
 
-            # -------------------------------------------------
-            # ANALYTICS
-            # -------------------------------------------------
+                else:
 
-            st.subheader("📊 Match Analytics")
+                    st.success(
+                        "No wicket"
+                    )
+
+            # =================================================
+            # SELECTED WIN PROBABILITY
+            # =================================================
+
+            st.subheader(
+                "🎯 Win Probability at This Point"
+            )
 
             col1, col2, col3 = st.columns(3)
 
             with col1:
 
-                max_probability = (
-                    replay_df["win_probability"].max()
-                    * 100
-                )
-
                 st.metric(
-                    "Highest Chasing Probability",
-                    f"{max_probability:.2f}%"
+                    "Chasing Team",
+                    f"{current_probability:.2f}%"
                 )
 
             with col2:
 
-                min_probability = (
-                    replay_df["win_probability"].min()
-                    * 100
-                )
+                if previous_probability is not None:
+
+                    change = (
+                        current_probability
+                        - previous_probability
+                    )
+
+                    st.metric(
+                        "Change From Previous Delivery",
+                        f"{change:+.2f} pp"
+                    )
+
+                else:
+
+                    st.metric(
+                        "Change From Previous Delivery",
+                        "N/A"
+                    )
+
+            with col3:
 
                 st.metric(
-                    "Lowest Chasing Probability",
-                    f"{min_probability:.2f}%"
+                    "Opposition",
+                    f"{100 - current_probability:.2f}%"
+                )
+
+            # -------------------------------------------------
+            # PROBABILITY BAR
+            # -------------------------------------------------
+
+            selected_probability_bar = f"""
+<div style="
+width:100%;
+height:24px;
+background:#444;
+border-radius:12px;
+overflow:hidden;
+margin-top:15px;
+margin-bottom:15px;
+">
+
+<div style="
+width:{current_probability}%;
+height:100%;
+background:#ff4b4b;
+border-radius:12px 0 0 12px;
+">
+</div>
+
+</div>
+"""
+
+            st.markdown(
+                selected_probability_bar,
+                unsafe_allow_html=True
+            )
+
+            # =================================================
+            # MATCH STATE AT DELIVERY
+            # =================================================
+
+            st.subheader(
+                "📌 Match State at This Delivery"
+            )
+
+            col1, col2, col3, col4 = st.columns(4)
+
+            with col1:
+
+                st.metric(
+                    "Runs Scored",
+                    int(
+                        selected_state["runs_scored"]
+                    )
+                )
+
+            with col2:
+
+                st.metric(
+                    "Runs Required",
+                    max(
+                        0,
+                        int(
+                            selected_state[
+                                "runs_required"
+                            ]
+                        )
+                    )
                 )
 
             with col3:
 
-                probability_change = (
-                    replay_df["win_probability"].iloc[-1]
-                    - replay_df["win_probability"].iloc[0]
-                ) * 100
+                st.metric(
+                    "Balls Remaining",
+                    int(
+                        selected_state[
+                            "balls_remaining"
+                        ]
+                    )
+                )
+
+            with col4:
 
                 st.metric(
-                    "Probability Change",
-                    f"{probability_change:+.2f}%"
+                    "Wickets in Hand",
+                    int(
+                        selected_state[
+                            "wickets_in_hand"
+                        ]
+                    )
+                )
+
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+
+                st.metric(
+                    "Runs Last 12 Balls",
+                    int(
+                        selected_state[
+                            "runs_last_12_balls"
+                        ]
+                    )
+                )
+
+            with col2:
+
+                st.metric(
+                    "Runs Last 6 Balls",
+                    int(
+                        selected_state[
+                            "runs_last_6_balls"
+                        ]
+                    )
+                )
+
+            with col3:
+
+                if (
+                    selected_state["balls_remaining"]
+                    > 0
+                ):
+
+                    required_rr = (
+                        selected_state[
+                            "runs_required"
+                        ]
+                        /
+                        (
+                            selected_state[
+                                "balls_remaining"
+                            ]
+                            / 6
+                        )
+                    )
+
+                else:
+
+                    required_rr = 0
+
+                st.metric(
+                    "Required Run Rate",
+                    f"{required_rr:.2f}"
+                )
+
+            # =================================================
+            # DELIVERY IMPACT
+            # =================================================
+
+            if previous_probability is not None:
+
+                change = (
+                    current_probability
+                    - previous_probability
+                )
+
+                st.subheader(
+                    "⚡ Delivery Impact"
+                )
+
+                if change > 5:
+
+                    st.success(
+                        f"This delivery increased the "
+                        f"model's win probability by "
+                        f"{change:.2f} percentage points."
+                    )
+
+                elif change > 0:
+
+                    st.info(
+                        f"This delivery increased the "
+                        f"model's win probability by "
+                        f"{change:.2f} percentage points."
+                    )
+
+                elif change < -5:
+
+                    st.error(
+                        f"This delivery reduced the "
+                        f"model's win probability by "
+                        f"{abs(change):.2f} percentage points."
+                    )
+
+                elif change < 0:
+
+                    st.warning(
+                        f"This delivery reduced the "
+                        f"model's win probability by "
+                        f"{abs(change):.2f} percentage points."
+                    )
+
+                else:
+
+                    st.info(
+                        "This delivery had almost no "
+                        "change in model probability."
+                    )
+
+            # =================================================
+            # MODEL CONTRIBUTIONS FOR SELECTED STATE
+            # =================================================
+
+            st.subheader(
+                "🧠 What Influenced the Prediction?"
+            )
+
+            # Build feature dictionary exactly as the
+            # predictor expects.
+
+            selected_features = (
+                predictor.calculate_features(
+                    runs_scored=int(
+                        selected_state[
+                            "runs_scored"
+                        ]
+                    ),
+                    target=int(
+                        selected_state[
+                            "runs_scored"
+                        ]
+                        +
+                        selected_state[
+                            "runs_required"
+                        ]
+                    ),
+                    legal_balls=int(
+                        selected_state[
+                            "legal_balls"
+                        ]
+                    ),
+                    wickets_lost=int(
+                        selected_state[
+                            "wickets_lost"
+                        ]
+                    ),
+                    runs_last_12_balls=int(
+                        selected_state[
+                            "runs_last_12_balls"
+                        ]
+                    ),
+                    runs_last_6_balls=int(
+                        selected_state[
+                            "runs_last_6_balls"
+                        ]
+                    ),
+                    current_over=int(
+                        selected_state[
+                            "over"
+                        ]
+                    )
+                )
+            )
+
+            selected_contributions = (
+                predictor.get_prediction_contributions(
+                    selected_features
+                )
+            )
+
+            positive_selected = (
+                selected_contributions[
+                    selected_contributions[
+                        "contribution"
+                    ] > 0
+                ]
+                .head(5)
+                .copy()
+            )
+
+            negative_selected = (
+                selected_contributions[
+                    selected_contributions[
+                        "contribution"
+                    ] < 0
+                ]
+                .head(5)
+                .copy()
+            )
+
+            col1, col2 = st.columns(2)
+
+            # -------------------------------------------------
+            # POSITIVE
+            # -------------------------------------------------
+
+            with col1:
+
+                st.markdown(
+                    "### 📈 Positive Factors"
+                )
+
+                positive_display = (
+                    positive_selected[
+                        [
+                            "feature",
+                            "value",
+                            "contribution"
+                        ]
+                    ]
+                    .copy()
+                )
+
+                positive_display[
+                    "value"
+                ] = positive_display[
+                    "value"
+                ].round(3)
+
+                positive_display[
+                    "contribution"
+                ] = positive_display[
+                    "contribution"
+                ].round(3)
+
+                positive_display = (
+                    positive_display.rename(
+                        columns={
+                            "feature": "Feature",
+                            "value": "Current Value",
+                            "contribution":
+                                "Contribution"
+                        }
+                    )
+                )
+
+                st.dataframe(
+                    positive_display,
+                    width="stretch",
+                    hide_index=True
                 )
 
             # -------------------------------------------------
-            # DELIVERY TABLE
+            # NEGATIVE
             # -------------------------------------------------
+
+            with col2:
+
+                st.markdown(
+                    "### 📉 Negative Factors"
+                )
+
+                negative_display = (
+                    negative_selected[
+                        [
+                            "feature",
+                            "value",
+                            "contribution"
+                        ]
+                    ]
+                    .copy()
+                )
+
+                negative_display[
+                    "value"
+                ] = negative_display[
+                    "value"
+                ].round(3)
+
+                negative_display[
+                    "contribution"
+                ] = negative_display[
+                    "contribution"
+                ].round(3)
+
+                negative_display = (
+                    negative_display.rename(
+                        columns={
+                            "feature": "Feature",
+                            "value": "Current Value",
+                            "contribution":
+                                "Contribution"
+                        }
+                    )
+                )
+
+                st.dataframe(
+                    negative_display,
+                    width="stretch",
+                    hide_index=True
+                )
+
+            # =================================================
+            # LATEST STATE
+            # =================================================
+
+            st.divider()
+
+            latest = replay_df.iloc[-1]
+
+            st.subheader(
+                "🎯 Final Match State"
+            )
+
+            col1, col2, col3, col4 = st.columns(4)
+
+            with col1:
+
+                st.metric(
+                    "Final Runs",
+                    int(
+                        latest["runs_scored"]
+                    )
+                )
+
+            with col2:
+
+                st.metric(
+                    "Final Wickets",
+                    int(
+                        latest["wickets_lost"]
+                    )
+                )
+
+            with col3:
+
+                st.metric(
+                    "Balls Used",
+                    int(
+                        latest["legal_balls"]
+                    )
+                )
+
+            with col4:
+
+                st.metric(
+                    "Final Win Probability",
+                    f"{latest['win_probability'] * 100:.2f}%"
+                )
+
+            # =================================================
+            # FULL DELIVERY TABLE
+            # =================================================
 
             with st.expander(
                 "📋 View Delivery-by-Delivery Data"
@@ -377,15 +896,17 @@ with historical_tab:
 
                 display_replay = replay_df.copy()
 
-                if "win_probability" in display_replay.columns:
-
-                    display_replay["win_probability"] = (
-                        display_replay["win_probability"] * 100
-                    ).round(2)
+                display_replay[
+                    "win_probability"
+                ] = (
+                    display_replay[
+                        "win_probability"
+                    ] * 100
+                ).round(2)
 
                 st.dataframe(
                     display_replay,
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True
                 )
 
@@ -400,9 +921,9 @@ with live_tab:
 
     st.markdown(
         """
-        Enter the current state of a T20 chase to estimate the
-        batting team's win probability.
-        """
+Enter the current state of a T20 chase to estimate the
+batting team's win probability.
+"""
     )
 
     # -----------------------------------------------------
@@ -428,10 +949,12 @@ with live_tab:
         )
 
     # -----------------------------------------------------
-    # SCORE INFORMATION
+    # SCORE
     # -----------------------------------------------------
 
-    st.subheader("📌 Current Match State")
+    st.subheader(
+        "📌 Current Match State"
+    )
 
     col1, col2, col3 = st.columns(3)
 
@@ -466,7 +989,7 @@ with live_tab:
         )
 
     # -----------------------------------------------------
-    # BALL INFORMATION
+    # BALLS
     # -----------------------------------------------------
 
     col1, col2, col3 = st.columns(3)
@@ -495,14 +1018,19 @@ with live_tab:
 
         st.metric(
             "Balls Remaining",
-            max(0, 120 - legal_balls)
+            max(
+                0,
+                120 - legal_balls
+            )
         )
 
     # -----------------------------------------------------
     # MOMENTUM
     # -----------------------------------------------------
 
-    st.subheader("⚡ Recent Batting Momentum")
+    st.subheader(
+        "⚡ Recent Batting Momentum"
+    )
 
     col1, col2 = st.columns(2)
 
@@ -530,26 +1058,26 @@ with live_tab:
     # VALIDATION
     # -----------------------------------------------------
 
-    st.subheader("✅ Input Validation")
+    st.subheader(
+        "✅ Input Validation"
+    )
 
     validation_errors = []
 
     if runs_scored > target:
+
         validation_errors.append(
             "Runs scored cannot be greater than the target."
         )
 
-    if wickets_lost > 10:
-        validation_errors.append(
-            "Wickets lost cannot be greater than 10."
-        )
-
     if legal_balls > 120:
+
         validation_errors.append(
-            "Legal balls cannot exceed 120 for a standard T20 innings."
+            "Legal balls cannot exceed 120."
         )
 
     if runs_last_6_balls > runs_last_12_balls:
+
         validation_errors.append(
             "Runs in the last 6 balls cannot exceed "
             "runs in the last 12 balls."
@@ -558,6 +1086,7 @@ with live_tab:
     if validation_errors:
 
         for error in validation_errors:
+
             st.error(error)
 
         valid_input = False
@@ -574,19 +1103,37 @@ with live_tab:
     # PREDICTION BUTTON
     # -----------------------------------------------------
 
-    st.write("")
-
     predict_button = st.button(
         "🔮 Calculate Win Probability",
         type="primary",
-        use_container_width=True
+        width="stretch"
     )
 
     # -----------------------------------------------------
-    # PREDICTION
+    # PREDICT
     # -----------------------------------------------------
 
     if predict_button and valid_input:
+
+        if "live_result" in st.session_state:
+
+            previous_result = (
+                st.session_state["live_result"]
+            )
+
+            st.session_state[
+                "previous_live_probability"
+            ] = (
+                previous_result[
+                    "batting_team_probability"
+                ] * 100
+            )
+
+        else:
+
+            st.session_state[
+                "previous_live_probability"
+            ] = None
 
         result = predictor.predict(
             runs_scored=runs_scored,
@@ -598,17 +1145,27 @@ with live_tab:
             current_over=current_over
         )
 
-        st.session_state["live_result"] = result
-        st.session_state["live_batting_team"] = batting_team
-        st.session_state["live_opposition"] = opposition
+        st.session_state[
+            "live_result"
+        ] = result
 
-    # -----------------------------------------------------
-    # DISPLAY PREDICTION
-    # -----------------------------------------------------
+        st.session_state[
+            "live_batting_team"
+        ] = batting_team
+
+        st.session_state[
+            "live_opposition"
+        ] = opposition
+
+    # =====================================================
+    # DISPLAY LIVE RESULT
+    # =====================================================
 
     if "live_result" in st.session_state:
 
-        result = st.session_state["live_result"]
+        result = st.session_state[
+            "live_result"
+        ]
 
         batting_team = st.session_state.get(
             "live_batting_team",
@@ -621,24 +1178,47 @@ with live_tab:
         )
 
         probability = (
-            result["batting_team_probability"] * 100
+            result[
+                "batting_team_probability"
+            ] * 100
         )
 
         opposition_probability = (
-            result["opposition_probability"] * 100
+            result[
+                "opposition_probability"
+            ] * 100
         )
+
+        previous_probability = (
+            st.session_state.get(
+                "previous_live_probability"
+            )
+        )
+
+        # =================================================
+        # WIN PROBABILITY
+        # =================================================
 
         st.divider()
 
         st.subheader(
-            "🏆 Win Probability"
+            "🎯 Win Probability"
         )
 
-        # -------------------------------------------------
-        # PROBABILITY DISPLAY
-        # -------------------------------------------------
+        if previous_probability is not None:
 
-        col1, col2 = st.columns(2)
+            probability_change = (
+                probability
+                - previous_probability
+            )
+
+        else:
+
+            probability_change = 0
+
+        col1, col2, col3 = st.columns(
+            [1, 2, 1]
+        )
 
         with col1:
 
@@ -647,36 +1227,149 @@ with live_tab:
                 f"{probability:.2f}%"
             )
 
-            st.progress(
-                min(
-                    max(
-                        probability / 100,
-                        0
-                    ),
-                    1
-                )
+        with col2:
+
+            probability_card = f"""
+<div style="
+text-align:center;
+padding:25px;
+border-radius:15px;
+background:rgba(255,255,255,0.05);
+border:1px solid rgba(255,255,255,0.10);
+">
+
+<div style="
+font-size:16px;
+opacity:0.7;
+">
+BATTING TEAM WIN PROBABILITY
+</div>
+
+<div style="
+font-size:52px;
+font-weight:700;
+margin-top:8px;
+">
+{probability:.2f}%
+</div>
+
+</div>
+"""
+
+            st.markdown(
+                probability_card,
+                unsafe_allow_html=True
             )
 
-        with col2:
+        with col3:
 
             st.metric(
                 opposition,
                 f"{opposition_probability:.2f}%"
             )
 
-            st.progress(
-                min(
-                    max(
-                        opposition_probability / 100,
-                        0
-                    ),
-                    1
-                )
-            )
+        # -------------------------------------------------
+        # PROBABILITY BAR
+        # -------------------------------------------------
+
+        probability_bar = f"""
+<div style="
+width:100%;
+height:24px;
+background:#444;
+border-radius:12px;
+overflow:hidden;
+margin-top:20px;
+margin-bottom:8px;
+">
+
+<div style="
+width:{probability}%;
+height:100%;
+background:#ff4b4b;
+border-radius:12px 0 0 12px;
+">
+</div>
+
+</div>
+"""
+
+        st.markdown(
+            probability_bar,
+            unsafe_allow_html=True
+        )
 
         # -------------------------------------------------
-        # MATCH STATE
+        # CHANGE
         # -------------------------------------------------
+
+        if previous_probability is not None:
+
+            if probability_change > 0:
+
+                st.success(
+                    f"📈 Win probability increased by "
+                    f"{probability_change:.2f} percentage points."
+                )
+
+            elif probability_change < 0:
+
+                st.warning(
+                    f"📉 Win probability decreased by "
+                    f"{abs(probability_change):.2f} percentage points."
+                )
+
+            else:
+
+                st.info(
+                    "➡️ Win probability is unchanged."
+                )
+
+        else:
+
+            st.info(
+                "ℹ️ This is the first prediction."
+            )
+
+        # =================================================
+        # MATCH SITUATION
+        # =================================================
+
+        st.subheader(
+            "📌 Match Situation"
+        )
+
+        if probability >= 75:
+
+            situation = "🟢 Strong position"
+
+        elif probability >= 60:
+
+            situation = "🟢 Advantage batting team"
+
+        elif probability >= 50:
+
+            situation = "🟡 Slight advantage batting team"
+
+        elif probability >= 40:
+
+            situation = "🟡 Slight advantage opposition"
+
+        elif probability >= 25:
+
+            situation = "🟠 Advantage opposition"
+
+        else:
+
+            situation = "🔴 Difficult position"
+
+        st.markdown(
+            f"### {situation}"
+        )
+
+        # =================================================
+        # MATCH STATE
+        # =================================================
 
         st.subheader(
             "📊 Match State"
@@ -688,21 +1381,27 @@ with live_tab:
 
             st.metric(
                 "Runs Required",
-                int(result["runs_required"])
+                int(
+                    result["runs_required"]
+                )
             )
 
         with col2:
 
             st.metric(
                 "Balls Remaining",
-                int(result["balls_remaining"])
+                int(
+                    result["balls_remaining"]
+                )
             )
 
         with col3:
 
             st.metric(
                 "Wickets in Hand",
-                int(result["wickets_in_hand"])
+                int(
+                    result["wickets_in_hand"]
+                )
             )
 
         with col4:
@@ -712,9 +1411,9 @@ with live_tab:
                 result["phase"]
             )
 
-        # -------------------------------------------------
+        # =================================================
         # ANALYTICS
-        # -------------------------------------------------
+        # =================================================
 
         st.subheader(
             "📈 Match Analytics"
@@ -740,12 +1439,14 @@ with live_tab:
 
             st.metric(
                 "Runs Required",
-                int(result["runs_required"])
+                int(
+                    result["runs_required"]
+                )
             )
 
-        # -------------------------------------------------
+        # =================================================
         # INTERPRETATION
-        # -------------------------------------------------
+        # =================================================
 
         st.subheader(
             "🧠 Prediction Interpretation"
@@ -762,8 +1463,9 @@ with live_tab:
         elif probability >= 50:
 
             st.info(
-                f"The match is relatively balanced, with "
-                f"{batting_team} at {probability:.2f}%."
+                f"The match is relatively balanced, "
+                f"with {batting_team} at "
+                f"{probability:.2f}%."
             )
 
         else:
@@ -774,9 +1476,9 @@ with live_tab:
                 f"for {batting_team}."
             )
 
-        # -------------------------------------------------
-        # FEATURE INPUTS
-        # -------------------------------------------------
+        # =================================================
+        # MODEL FEATURES
+        # =================================================
 
         with st.expander(
             "🔍 View Model Features"
@@ -796,69 +1498,81 @@ with live_tab:
                         "Phase"
                     ],
                     "Value": [
-                        result["runs_scored"],
-                        result["runs_required"],
-                        result["balls_remaining"],
-                        result["wickets_in_hand"],
-                        round(
-                            result["current_run_rate"],
-                            3
+                        str(
+                            result["runs_scored"]
                         ),
-                        round(
-                            result["required_run_rate"],
-                            3
+                        str(
+                            result["runs_required"]
                         ),
-                        result["runs_last_12_balls"],
-                        result["runs_last_6_balls"],
-                        result["phase"]
+                        str(
+                            result["balls_remaining"]
+                        ),
+                        str(
+                            result["wickets_in_hand"]
+                        ),
+                        f"{result['current_run_rate']:.3f}",
+                        f"{result['required_run_rate']:.3f}",
+                        str(
+                            result[
+                                "runs_last_12_balls"
+                            ]
+                        ),
+                        str(
+                            result[
+                                "runs_last_6_balls"
+                            ]
+                        ),
+                        str(
+                            result["phase"]
+                        )
                     ]
                 }
             )
 
             st.dataframe(
                 feature_display,
-                use_container_width=True,
+                width="stretch",
                 hide_index=True
             )
 
-        # -------------------------------------------------
-        # MODEL EXPLANATION
-        # -------------------------------------------------
+        # =================================================
+        # MODEL CONTRIBUTIONS
+        # =================================================
 
         st.subheader(
             "🧠 Why Did the Model Make This Prediction?"
         )
 
         st.caption(
-            "These are the model's feature contributions for "
-            "the current match state. Positive values push the "
-            "prediction toward the batting team; negative values "
-            "push it away. Contributions are in model "
-            "linear-predictor space, not percentage points."
+            "Positive values push the prediction toward "
+            "the batting team; negative values push it away. "
+            "These are model contribution values, not "
+            "percentage points."
         )
 
-        # Get contribution data
         contribution_df = (
             predictor.get_prediction_contributions(
                 result
             )
         )
 
-        # Positive contributions
-        positive_contributions = contribution_df[
-            contribution_df["contribution"] > 0
-        ].copy()
+        positive_contributions = (
+            contribution_df[
+                contribution_df[
+                    "contribution"
+                ] > 0
+            ].copy()
+        )
 
-        # Negative contributions
-        negative_contributions = contribution_df[
-            contribution_df["contribution"] < 0
-        ].copy()
+        negative_contributions = (
+            contribution_df[
+                contribution_df[
+                    "contribution"
+                ] < 0
+            ].copy()
+        )
 
         col1, col2 = st.columns(2)
-
-        # -------------------------------------------------
-        # POSITIVE FACTORS
-        # -------------------------------------------------
 
         with col1:
 
@@ -878,33 +1592,34 @@ with live_tab:
                 .copy()
             )
 
-            positive_display["contribution"] = (
-                positive_display["contribution"]
-                .round(3)
-            )
+            positive_display[
+                "value"
+            ] = positive_display[
+                "value"
+            ].round(3)
 
-            positive_display["value"] = (
-                positive_display["value"]
-                .round(3)
-            )
+            positive_display[
+                "contribution"
+            ] = positive_display[
+                "contribution"
+            ].round(3)
 
-            positive_display = positive_display.rename(
-                columns={
-                    "feature": "Feature",
-                    "value": "Current Value",
-                    "contribution": "Contribution"
-                }
+            positive_display = (
+                positive_display.rename(
+                    columns={
+                        "feature": "Feature",
+                        "value": "Current Value",
+                        "contribution":
+                            "Contribution"
+                    }
+                )
             )
 
             st.dataframe(
                 positive_display,
-                use_container_width=True,
+                width="stretch",
                 hide_index=True
             )
-
-        # -------------------------------------------------
-        # NEGATIVE FACTORS
-        # -------------------------------------------------
 
         with col2:
 
@@ -924,33 +1639,38 @@ with live_tab:
                 .copy()
             )
 
-            negative_display["contribution"] = (
-                negative_display["contribution"]
-                .round(3)
-            )
+            negative_display[
+                "value"
+            ] = negative_display[
+                "value"
+            ].round(3)
 
-            negative_display["value"] = (
-                negative_display["value"]
-                .round(3)
-            )
+            negative_display[
+                "contribution"
+            ] = negative_display[
+                "contribution"
+            ].round(3)
 
-            negative_display = negative_display.rename(
-                columns={
-                    "feature": "Feature",
-                    "value": "Current Value",
-                    "contribution": "Contribution"
-                }
+            negative_display = (
+                negative_display.rename(
+                    columns={
+                        "feature": "Feature",
+                        "value": "Current Value",
+                        "contribution":
+                            "Contribution"
+                    }
+                )
             )
 
             st.dataframe(
                 negative_display,
-                use_container_width=True,
+                width="stretch",
                 hide_index=True
             )
 
-        # -------------------------------------------------
-        # MODEL COEFFICIENTS
-        # -------------------------------------------------
+        # =================================================
+        # GLOBAL MODEL EFFECTS
+        # =================================================
 
         with st.expander(
             "📚 View Global Model Feature Effects"
@@ -960,17 +1680,21 @@ with live_tab:
                 predictor.explain_prediction()
             )
 
-            coefficients["coefficient"] = (
-                coefficients["coefficient"]
-                .round(4)
-            )
+            coefficients[
+                "coefficient"
+            ] = coefficients[
+                "coefficient"
+            ].round(4)
 
-            coefficients = coefficients.rename(
-                columns={
-                    "feature": "Feature",
-                    "coefficient": "Coefficient",
-                    "effect": "Effect"
-                }
+            coefficients = (
+                coefficients.rename(
+                    columns={
+                        "feature": "Feature",
+                        "coefficient":
+                            "Coefficient",
+                        "effect": "Effect"
+                    }
+                )
             )
 
             st.dataframe(
@@ -981,21 +1705,22 @@ with live_tab:
                         "Effect"
                     ]
                 ],
-                use_container_width=True,
+                width="stretch",
                 hide_index=True
             )
 
             st.caption(
-                "Global coefficients describe the Logistic Regression "
-                "model's learned direction of association. They are "
-                "not the same as the contribution of a feature for "
-                "one specific match state."
+                "Global coefficients describe the Logistic "
+                "Regression model's learned direction of "
+                "association. They are not the same as the "
+                "contribution of a feature for one specific "
+                "match state."
             )
 
 
-# ---------------------------------------------------------
+# =========================================================
 # FOOTER
-# ---------------------------------------------------------
+# =========================================================
 
 st.divider()
 
